@@ -258,4 +258,1283 @@
         </div>
     </div>
 </section>
+---
+
+## 🎪 COMPONENTES 3D E WEBGL
+
+### 🌟 Elemento 3D com Three.js
+
+```html
+<!-- Container 3D -->
+<div id="three-container" class="w-full h-96 rounded-3xl overflow-hidden bg-gradient-to-br from-gray-900 to-purple-900"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+class ThreeScene {
+    constructor(containerId) {
+        this.container = document.getElementById(containerId);
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.PerspectiveCamera(75, this.container.offsetWidth / this.container.offsetHeight, 0.1, 1000);
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        this.mesh = null;
+        this.mouse = { x: 0, y: 0 };
+        
+        this.init();
+    }
+    
+    init() {
+        // Setup renderer
+        this.renderer.setSize(this.container.offsetWidth, this.container.offsetHeight);
+        this.renderer.setClearColor(0x000000, 0);
+        this.container.appendChild(this.renderer.domElement);
+        
+        // Create geometry
+        const geometry = new THREE.IcosahedronGeometry(2, 1);
+        
+        // Create material with shader
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0 },
+                color1: { value: new THREE.Color(0x667eea) },
+                color2: { value: new THREE.Color(0x764ba2) },
+                mouse: { value: new THREE.Vector2(0, 0) }
+            },
+            vertexShader: `
+                uniform float time;
+                uniform vec2 mouse;
+                varying float vNoise;
+                
+                void main() {
+                    vec3 pos = position;
+                    float noise = sin(pos.x * 2.0 + time) * sin(pos.y * 2.0 + time) * sin(pos.z * 2.0 + time);
+                    pos += normal * noise * 0.1;
+                    
+                    // Mouse interaction
+                    pos.x += mouse.x * 0.5;
+                    pos.y += mouse.y * 0.5;
+                    
+                    vNoise = noise;
+                    
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform vec3 color1;
+                uniform vec3 color2;
+                varying float vNoise;
+                
+                void main() {
+                    vec3 color = mix(color1, color2, vNoise * 0.5 + 0.5);
+                    gl_FragColor = vec4(color, 0.8);
+                }
+            `,
+            transparent: true
+        });
+        
+        this.mesh = new THREE.Mesh(geometry, material);
+        this.scene.add(this.mesh);
+        
+        this.camera.position.z = 5;
+        
+        // Mouse interaction
+        this.container.addEventListener('mousemove', (e) => {
+            const rect = this.container.getBoundingClientRect();
+            this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+        });
+        
+        // Resize handler
+        window.addEventListener('resize', () => this.onResize());
+        
+        this.animate();
+    }
+    
+    animate() {
+        requestAnimationFrame(() => this.animate());
+        
+        // Update uniforms
+        this.mesh.material.uniforms.time.value += 0.01;
+        this.mesh.material.uniforms.mouse.value.set(this.mouse.x, this.mouse.y);
+        
+        // Rotate mesh
+        this.mesh.rotation.x += 0.005;
+        this.mesh.rotation.y += 0.01;
+        
+        this.renderer.render(this.scene, this.camera);
+    }
+    
+    onResize() {
+        this.camera.aspect = this.container.offsetWidth / this.container.offsetHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(this.container.offsetWidth, this.container.offsetHeight);
+    }
+}
+
+// Initialize
+new ThreeScene('three-container');
+</script>
+```
+
+### 🎨 Shader Background Dinâmico
+
+```html
+<div id="shader-bg" class="fixed inset-0 -z-10"></div>
+
+<script>
+class ShaderBackground {
+    constructor() {
+        this.scene = new THREE.Scene();
+        this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        this.renderer = new THREE.WebGLRenderer();
+        this.uniforms = {
+            time: { value: 0 },
+            resolution: { value: new THREE.Vector2() },
+            mouse: { value: new THREE.Vector2() }
+        };
+        
+        this.init();
+    }
+    
+    init() {
+        const container = document.getElementById('shader-bg');
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        container.appendChild(this.renderer.domElement);
+        
+        this.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+        
+        const geometry = new THREE.PlaneGeometry(2, 2);
+        const material = new THREE.ShaderMaterial({
+            uniforms: this.uniforms,
+            vertexShader: `
+                void main() {
+                    gl_Position = vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                uniform vec2 resolution;
+                uniform vec2 mouse;
+                
+                vec3 palette(float t) {
+                    vec3 a = vec3(0.5, 0.5, 0.5);
+                    vec3 b = vec3(0.5, 0.5, 0.5);
+                    vec3 c = vec3(1.0, 1.0, 1.0);
+                    vec3 d = vec3(0.263, 0.416, 0.557);
+                    
+                    return a + b * cos(6.28318 * (c * t + d));
+                }
+                
+                void main() {
+                    vec2 uv = (gl_FragCoord.xy * 2.0 - resolution.xy) / resolution.y;
+                    vec2 uv0 = uv;
+                    vec3 finalColor = vec3(0.0);
+                    
+                    for (float i = 0.0; i < 4.0; i++) {
+                        uv = fract(uv * 1.5) - 0.5;
+                        
+                        float d = length(uv) * exp(-length(uv0));
+                        vec3 col = palette(length(uv0) + i * 0.4 + time * 0.4);
+                        
+                        d = sin(d * 8.0 + time) / 8.0;
+                        d = abs(d);
+                        d = pow(0.01 / d, 1.2);
+                        
+                        finalColor += col * d;
+                    }
+                    
+                    gl_FragColor = vec4(finalColor, 0.1);
+                }
+            `
+        });
+        
+        const mesh = new THREE.Mesh(geometry, material);
+        this.scene.add(mesh);
+        
+        // Mouse tracking
+        document.addEventListener('mousemove', (e) => {
+            this.uniforms.mouse.value.set(e.clientX, e.clientY);
+        });
+        
+        window.addEventListener('resize', () => this.onResize());
+        this.animate();
+    }
+    
+    animate() {
+        requestAnimationFrame(() => this.animate());
+        this.uniforms.time.value += 0.01;
+        this.renderer.render(this.scene, this.camera);
+    }
+    
+    onResize() {
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.uniforms.resolution.value.set(window.innerWidth, window.innerHeight);
+    }
+}
+
+new ShaderBackground();
+</script>
+```
+
+---
+
+## 🎮 COMPONENTES INTERATIVOS GAMIFICADOS
+
+### 🎯 Quiz Interativo com Pontuação
+
+```html
+<div class="quiz-container max-w-4xl mx-auto p-8 bg-white rounded-3xl shadow-2xl">
+    <div class="quiz-header mb-8">
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-3xl font-bold text-gray-900">Quiz Interativo</h2>
+            <div class="score-display bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-2 rounded-full font-bold">
+                Pontos: <span id="score">0</span>
+            </div>
+        </div>
+        
+        <!-- Progress Bar -->
+        <div class="w-full bg-gray-200 rounded-full h-3">
+            <div id="progress-bar" class="bg-gradient-to-r from-green-400 to-blue-500 h-3 rounded-full transition-all duration-500" style="width: 0%"></div>
+        </div>
+        <div class="text-center mt-2 text-gray-600">
+            Pergunta <span id="current-question">1</span> de <span id="total-questions">5</span>
+        </div>
+    </div>
+    
+    <div id="quiz-content">
+        <!-- Questions will be inserted here -->
+    </div>
+    
+    <div id="quiz-results" class="hidden text-center">
+        <div class="mb-6">
+            <div class="text-6xl mb-4">🎉</div>
+            <h3 class="text-3xl font-bold text-gray-900 mb-2">Parabéns!</h3>
+            <p class="text-xl text-gray-600">Você completou o quiz!</p>
+        </div>
+        
+        <div class="final-score bg-gradient-to-r from-purple-100 to-pink-100 rounded-2xl p-8 mb-6">
+            <div class="text-4xl font-bold text-purple-700 mb-2">
+                <span id="final-score">0</span> / <span id="max-score">0</span>
+            </div>
+            <p class="text-purple-600">Pontuação Final</p>
+        </div>
+        
+        <button class="restart-quiz bg-gradient-to-r from-purple-600 to-pink-600 text-white px-8 py-4 rounded-xl font-semibold hover:shadow-lg transition-shadow">
+            Tentar Novamente
+        </button>
+    </div>
+</div>
+
+<style>
+.quiz-option {
+    @apply w-full p-6 text-left border-2 border-gray-200 rounded-xl transition-all duration-300 hover:border-purple-300 hover:bg-purple-50;
+}
+
+.quiz-option.correct {
+    @apply border-green-500 bg-green-50 text-green-800;
+}
+
+.quiz-option.incorrect {
+    @apply border-red-500 bg-red-50 text-red-800;
+}
+
+.quiz-option.selected {
+    @apply border-purple-500 bg-purple-50;
+}
+
+@keyframes celebrate {
+    0%, 100% { transform: scale(1) rotate(0deg); }
+    25% { transform: scale(1.1) rotate(5deg); }
+    75% { transform: scale(1.1) rotate(-5deg); }
+}
+
+.celebrate {
+    animation: celebrate 0.6s ease-in-out;
+}
+</style>
+
+<script>
+class InteractiveQuiz {
+    constructor() {
+        this.questions = [
+            {
+                question: "Qual é a principal vantagem de usar micro-interações em interfaces?",
+                options: [
+                    "Reduzir o tempo de carregamento",
+                    "Melhorar a experiência do usuário",
+                    "Diminuir o código necessário",
+                    "Aumentar a velocidade do servidor"
+                ],
+                correct: 1,
+                points: 20
+            },
+            {
+                question: "O que é GSAP?",
+                options: [
+                    "Uma linguagem de programação",
+                    "Um framework CSS",
+                    "Uma biblioteca de animações JavaScript",
+                    "Um tipo de servidor"
+                ],
+                correct: 2,
+                points: 20
+            },
+            // Add more questions...
+        ];
+        
+        this.currentQuestion = 0;
+        this.score = 0;
+        this.selectedAnswers = [];
+        
+        this.init();
+    }
+    
+    init() {
+        this.updateProgress();
+        this.showQuestion();
+        
+        document.querySelector('.restart-quiz').addEventListener('click', () => {
+            this.restart();
+        });
+    }
+    
+    showQuestion() {
+        const question = this.questions[this.currentQuestion];
+        const content = document.getElementById('quiz-content');
+        
+        content.innerHTML = `
+            <div class="question-card">
+                <h3 class="text-2xl font-bold text-gray-900 mb-8">${question.question}</h3>
+                <div class="options-grid space-y-4">
+                    ${question.options.map((option, index) => `
+                        <button class="quiz-option" onclick="quiz.selectAnswer(${index})">
+                            <div class="flex items-center justify-between">
+                                <span>${option}</span>
+                                <div class="option-indicator w-6 h-6 border-2 border-gray-300 rounded-full"></div>
+                            </div>
+                        </button>
+                    `).join('')}
+                </div>
+                
+                <div class="mt-8 text-center">
+                    <button id="next-btn" class="hidden bg-purple-600 text-white px-8 py-3 rounded-xl font-semibold hover:bg-purple-700 transition-colors" onclick="quiz.nextQuestion()">
+                        ${this.currentQuestion === this.questions.length - 1 ? 'Ver Resultado' : 'Próxima Pergunta'}
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+    
+    selectAnswer(selectedIndex) {
+        const question = this.questions[this.currentQuestion];
+        const options = document.querySelectorAll('.quiz-option');
+        const indicators = document.querySelectorAll('.option-indicator');
+        
+        // Clear previous selections
+        options.forEach(option => option.classList.remove('selected', 'correct', 'incorrect'));
+        
+        // Mark selected answer
+        options[selectedIndex].classList.add('selected');
+        
+        // Show correct/incorrect after a delay
+        setTimeout(() => {
+            options.forEach((option, index) => {
+                if (index === question.correct) {
+                    option.classList.add('correct');
+                    indicators[index].innerHTML = '✓';
+                    indicators[index].classList.add('bg-green-500', 'text-white');
+                } else if (index === selectedIndex && index !== question.correct) {
+                    option.classList.add('incorrect');
+                    indicators[index].innerHTML = '✗';
+                    indicators[index].classList.add('bg-red-500', 'text-white');
+                }
+            });
+            
+            // Update score
+            if (selectedIndex === question.correct) {
+                this.score += question.points;
+                this.updateScore();
+                this.showCelebration();
+            }
+            
+            document.getElementById('next-btn').classList.remove('hidden');
+        }, 500);
+        
+        this.selectedAnswers[this.currentQuestion] = selectedIndex;
+    }
+    
+    nextQuestion() {
+        this.currentQuestion++;
+        
+        if (this.currentQuestion < this.questions.length) {
+            this.updateProgress();
+            this.showQuestion();
+        } else {
+            this.showResults();
+        }
+    }
+    
+    updateProgress() {
+        const progress = ((this.currentQuestion) / this.questions.length) * 100;
+        document.getElementById('progress-bar').style.width = progress + '%';
+        document.getElementById('current-question').textContent = this.currentQuestion + 1;
+        document.getElementById('total-questions').textContent = this.questions.length;
+    }
+    
+    updateScore() {
+        document.getElementById('score').textContent = this.score;
+    }
+    
+    showCelebration() {
+        const scoreDisplay = document.querySelector('.score-display');
+        scoreDisplay.classList.add('celebrate');
+        setTimeout(() => {
+            scoreDisplay.classList.remove('celebrate');
+        }, 600);
+    }
+    
+    showResults() {
+        const maxScore = this.questions.reduce((total, q) => total + q.points, 0);
+        
+        document.getElementById('quiz-content').classList.add('hidden');
+        document.getElementById('quiz-results').classList.remove('hidden');
+        document.getElementById('final-score').textContent = this.score;
+        document.getElementById('max-score').textContent = maxScore;
+        
+        // Update progress to 100%
+        document.getElementById('progress-bar').style.width = '100%';
+    }
+    
+    restart() {
+        this.currentQuestion = 0;
+        this.score = 0;
+        this.selectedAnswers = [];
+        
+        document.getElementById('quiz-content').classList.remove('hidden');
+        document.getElementById('quiz-results').classList.add('hidden');
+        
+        this.updateProgress();
+        this.updateScore();
+        this.showQuestion();
+    }
+}
+
+// Initialize quiz
+const quiz = new InteractiveQuiz();
+</script>
+```
+
+### 🎪 Carousel 3D Infinito
+
+```html
+<div class="carousel-3d-container relative h-96 overflow-hidden">
+    <div id="carousel-3d" class="carousel-3d h-full flex items-center justify-center">
+        <!-- Items will be inserted here -->
+    </div>
+    
+    <div class="carousel-controls absolute bottom-6 left-1/2 transform -translate-x-1/2 flex gap-4">
+        <button class="carousel-prev bg-white/20 backdrop-blur-sm text-white p-3 rounded-full hover:bg-white/30 transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+        </button>
+        <button class="carousel-next bg-white/20 backdrop-blur-sm text-white p-3 rounded-full hover:bg-white/30 transition-colors">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+            </svg>
+        </button>
+    </div>
+</div>
+
+<style>
+.carousel-3d-container {
+    perspective: 1000px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.carousel-item {
+    position: absolute;
+    width: 300px;
+    height: 200px;
+    background: white;
+    border-radius: 20px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #333;
+    transition: all 0.6s cubic-bezier(0.23, 1, 0.320, 1);
+    cursor: pointer;
+}
+
+.carousel-item:hover {
+    transform: scale(1.05) !important;
+    box-shadow: 0 30px 60px rgba(0,0,0,0.2);
+}
+</style>
+
+<script>
+class Carousel3D {
+    constructor() {
+        this.items = [
+            { title: "Item 1", color: "#FF6B6B" },
+            { title: "Item 2", color: "#4ECDC4" },
+            { title: "Item 3", color: "#45B7D1" },
+            { title: "Item 4", color: "#96CEB4" },
+            { title: "Item 5", color: "#FFEAA7" },
+            { title: "Item 6", color: "#DDA0DD" },
+        ];
+        
+        this.currentIndex = 0;
+        this.container = document.getElementById('carousel-3d');
+        this.itemElements = [];
+        
+        this.init();
+    }
+    
+    init() {
+        this.createItems();
+        this.positionItems();
+        this.bindEvents();
+        
+        // Auto-rotate
+        setInterval(() => {
+            this.next();
+        }, 4000);
+    }
+    
+    createItems() {
+        this.items.forEach((item, index) => {
+            const element = document.createElement('div');
+            element.className = 'carousel-item';
+            element.style.background = `linear-gradient(135deg, ${item.color}, ${this.shadeColor(item.color, -20)})`;
+            element.innerHTML = `
+                <div class="text-center">
+                    <div class="text-2xl font-bold mb-2">${item.title}</div>
+                    <div class="text-sm opacity-75">Descrição do item</div>
+                </div>
+            `;
+            
+            this.container.appendChild(element);
+            this.itemElements.push(element);
+        });
+    }
+    
+    positionItems() {
+        const radius = 350;
+        const angleStep = (2 * Math.PI) / this.items.length;
+        
+        this.itemElements.forEach((element, index) => {
+            const angle = angleStep * (index - this.currentIndex);
+            const x = Math.sin(angle) * radius;
+            const z = Math.cos(angle) * radius;
+            const scale = z > 0 ? 0.8 : 1.2;
+            const opacity = z > 0 ? 0.7 : 1;
+            const rotateY = -(angle * 180 / Math.PI);
+            
+            element.style.transform = `
+                translateX(${x}px) 
+                translateZ(${z}px) 
+                scale(${scale}) 
+                rotateY(${rotateY}deg)
+            `;
+            element.style.opacity = opacity;
+            element.style.zIndex = Math.round(z);
+        });
+    }
+    
+    next() {
+        this.currentIndex = (this.currentIndex + 1) % this.items.length;
+        this.positionItems();
+    }
+    
+    prev() {
+        this.currentIndex = (this.currentIndex - 1 + this.items.length) % this.items.length;
+        this.positionItems();
+    }
+    
+    bindEvents() {
+        document.querySelector('.carousel-next').addEventListener('click', () => this.next());
+        document.querySelector('.carousel-prev').addEventListener('click', () => this.prev());
+        
+        // Touch/swipe support
+        let startX = 0;
+        this.container.addEventListener('touchstart', (e) => {
+            startX = e.touches[0].clientX;
+        });
+        
+        this.container.addEventListener('touchend', (e) => {
+            const endX = e.changedTouches[0].clientX;
+            const diff = startX - endX;
+            
+            if (Math.abs(diff) > 50) {
+                if (diff > 0) {
+                    this.next();
+                } else {
+                    this.prev();
+                }
+            }
+        });
+    }
+    
+    shadeColor(color, percent) {
+        const R = parseInt(color.substring(1, 3), 16);
+        const G = parseInt(color.substring(3, 5), 16);
+        const B = parseInt(color.substring(5, 7), 16);
+        
+        const newR = Math.round(R * (100 + percent) / 100);
+        const newG = Math.round(G * (100 + percent) / 100);
+        const newB = Math.round(B * (100 + percent) / 100);
+        
+        return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+    }
+}
+
+new Carousel3D();
+</script>
+```
+
+---
+
+## 🎨 COMPONENTES DE DADOS VISUAIS
+
+### 📊 Dashboard Interativo
+
+```html
+<div class="dashboard-grid grid grid-cols-1 md:grid-cols-3 gap-6 p-6">
+    <!-- Metric Card -->
+    <div class="metric-card bg-white rounded-2xl p-6 shadow-lg hover:shadow-xl transition-shadow">
+        <div class="flex items-center justify-between mb-4">
+            <div class="metric-icon w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                <svg class="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/>
+                </svg>
+            </div>
+            <div class="metric-trend text-green-500 text-sm font-semibold">+12.5%</div>
+        </div>
+        <div class="metric-value text-3xl font-bold text-gray-900 mb-1" data-target="2847">0</div>
+        <div class="metric-label text-gray-600">Usuários Ativos</div>
+        
+        <!-- Mini Chart -->
+        <div class="mt-4">
+            <canvas class="mini-chart" width="200" height="50"></canvas>
+        </div>
+    </div>
+    
+    <!-- Progress Ring -->
+    <div class="progress-ring-card bg-gradient-to-br from-purple-500 to-pink-500 rounded-2xl p-6 text-white">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-semibold">Meta Mensal</h3>
+            <div class="text-sm opacity-75">75% completo</div>
+        </div>
+        
+        <div class="flex items-center justify-center">
+            <div class="relative w-32 h-32">
+                <svg class="w-32 h-32 transform -rotate-90" viewBox="0 0 100 100">
+                    <!-- Background circle -->
+                    <circle cx="50" cy="50" r="40" stroke="rgba(255,255,255,0.2)" stroke-width="8" fill="none"/>
+                    <!-- Progress circle -->
+                    <circle cx="50" cy="50" r="40" stroke="white" stroke-width="8" fill="none" 
+                            stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="62.8"
+                            class="progress-circle"/>
+                </svg>
+                <div class="absolute inset-0 flex items-center justify-center">
+                    <div class="text-center">
+                        <div class="text-2xl font-bold">75%</div>
+                        <div class="text-xs opacity-75">R$ 75k</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Activity Chart -->
+    <div class="activity-chart-card bg-white rounded-2xl p-6 shadow-lg">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4">Atividade Semanal</h3>
+        <canvas id="activity-chart" width="300" height="150"></canvas>
+    </div>
+</div>
+
+<script>
+class Dashboard {
+    constructor() {
+        this.animateMetrics();
+        this.createCharts();
+        this.animateProgressRing();
+    }
+    
+    animateMetrics() {
+        document.querySelectorAll('.metric-value').forEach(element => {
+            const target = parseInt(element.dataset.target);
+            const duration = 2000;
+            const increment = target / (duration / 16);
+            let current = 0;
+            
+            const timer = setInterval(() => {
+                current += increment;
+                if (current >= target) {
+                    current = target;
+                    clearInterval(timer);
+                }
+                element.textContent = Math.floor(current).toLocaleString();
+            }, 16);
+        });
+    }
+    
+    createCharts() {
+        // Mini Chart
+        const miniCharts = document.querySelectorAll('.mini-chart');
+        miniCharts.forEach(canvas => {
+            const ctx = canvas.getContext('2d');
+            const data = [65, 72, 68, 75, 82, 78, 85, 88, 92, 89, 95, 98];
+            
+            this.drawMiniChart(ctx, data, canvas.width, canvas.height);
+        });
+        
+        // Activity Chart
+        const activityCanvas = document.getElementById('activity-chart');
+        if (activityCanvas) {
+            this.drawActivityChart(activityCanvas);
+        }
+    }
+    
+    drawMiniChart(ctx, data, width, height) {
+        const padding = 10;
+        const chartWidth = width - padding * 2;
+        const chartHeight = height - padding * 2;
+        
+        const max = Math.max(...data);
+        const min = Math.min(...data);
+        const range = max - min;
+        
+        ctx.strokeStyle = '#3B82F6';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        
+        data.forEach((value, index) => {
+            const x = padding + (chartWidth / (data.length - 1)) * index;
+            const y = padding + chartHeight - ((value - min) / range) * chartHeight;
+            
+            if (index === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.lineTo(x, y);
+            }
+        });
+        
+        ctx.stroke();
+        
+        // Add gradient fill
+        ctx.globalAlpha = 0.2;
+        ctx.fillStyle = '#3B82F6';
+        ctx.lineTo(width - padding, height - padding);
+        ctx.lineTo(padding, height - padding);
+        ctx.closePath();
+        ctx.fill();
+    }
+    
+    drawActivityChart(canvas) {
+        const ctx = canvas.getContext('2d');
+        const data = [12, 19, 8, 15, 25, 18, 22];
+        const labels = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+        
+        const barWidth = 30;
+        const barSpacing = 10;
+        const chartHeight = 100;
+        const maxValue = Math.max(...data);
+        
+        data.forEach((value, index) => {
+            const barHeight = (value / maxValue) * chartHeight;
+            const x = index * (barWidth + barSpacing);
+            const y = canvas.height - barHeight - 30;
+            
+            // Draw bar with gradient
+            const gradient = ctx.createLinearGradient(0, y, 0, y + barHeight);
+            gradient.addColorStop(0, '#8B5CF6');
+            gradient.addColorStop(1, '#3B82F6');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(x, y, barWidth, barHeight);
+            
+            // Draw label
+            ctx.fillStyle = '#6B7280';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(labels[index], x + barWidth / 2, canvas.height - 10);
+            
+            // Draw value
+            ctx.fillStyle = '#1F2937';
+            ctx.font = 'bold 14px Arial';
+            ctx.fillText(value, x + barWidth / 2, y - 5);
+        });
+    }
+    
+    animateProgressRing() {
+        const circle = document.querySelector('.progress-circle');
+        if (circle) {
+            const circumference = 2 * Math.PI * 40; // radius = 40
+            const progress = 75; // 75%
+            const offset = circumference - (progress / 100) * circumference;
+            
+            // Animate the stroke-dashoffset
+            let currentOffset = circumference;
+            const animation = setInterval(() => {
+                currentOffset -= 5;
+                if (currentOffset <= offset) {
+                    currentOffset = offset;
+                    clearInterval(animation);
+                }
+                circle.style.strokeDashoffset = currentOffset;
+            }, 20);
+        }
+    }
+}
+
+new Dashboard();
+</script>
+```
+
+---
+
+## 🚀 COMPONENTES DE PERFORMANCE
+
+### ⚡ Lazy Loading Inteligente
+
+```html
+<div class="lazy-container">
+    <div class="lazy-placeholder bg-gray-200 rounded-2xl animate-pulse" style="height: 300px;">
+        <div class="flex items-center justify-center h-full">
+            <div class="text-gray-400">Carregando...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+class IntelligentLazyLoading {
+    constructor() {
+        this.observer = null;
+        this.imageCache = new Map();
+        this.prefetchQueue = [];
+        this.loadingPromises = new Map();
+        
+        this.init();
+    }
+    
+    init() {
+        this.createObserver();
+        this.observeLazyElements();
+        this.prefetchNearbyImages();
+    }
+    
+    createObserver() {
+        const options = {
+            root: null,
+            rootMargin: '50px 0px', // Start loading 50px before entering viewport
+            threshold: 0.1
+        };
+        
+        this.observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    this.loadElement(entry.target);
+                    this.observer.unobserve(entry.target);
+                }
+            });
+        }, options);
+    }
+    
+    observeLazyElements() {
+        document.querySelectorAll('[data-lazy]').forEach(element => {
+            this.observer.observe(element);
+        });
+    }
+    
+    async loadElement(element) {
+        const src = element.dataset.lazy;
+        const type = element.dataset.lazyType || 'image';
+        
+        try {
+            element.classList.add('lazy-loading');
+            
+            switch (type) {
+                case 'image':
+                    await this.loadImage(element, src);
+                    break;
+                case 'video':
+                    await this.loadVideo(element, src);
+                    break;
+                case 'iframe':
+                    await this.loadIframe(element, src);
+                    break;
+                default:
+                    await this.loadGeneric(element, src);
+            }
+            
+            element.classList.remove('lazy-loading');
+            element.classList.add('lazy-loaded');
+            
+            // Trigger custom event
+            element.dispatchEvent(new CustomEvent('lazyLoaded', {
+                detail: { element, src, type }
+            }));
+            
+        } catch (error) {
+            console.error('Failed to load lazy element:', error);
+            element.classList.add('lazy-error');
+        }
+    }
+    
+    loadImage(element, src) {
+        return new Promise((resolve, reject) => {
+            // Check cache first
+            if (this.imageCache.has(src)) {
+                element.src = src;
+                resolve();
+                return;
+            }
+            
+            // Load with progress tracking
+            const img = new Image();
+            
+            img.onload = () => {
+                this.imageCache.set(src, img);
+                element.src = src;
+                
+                // Fade in animation
+                gsap.fromTo(element, 
+                    { opacity: 0, scale: 1.1 },
+                    { opacity: 1, scale: 1, duration: 0.6, ease: 'power2.out' }
+                );
+                
+                resolve();
+            };
+            
+            img.onerror = reject;
+            img.src = src;
+        });
+    }
+    
+    loadVideo(element, src) {
+        return new Promise((resolve, reject) => {
+            element.src = src;
+            element.load();
+            
+            element.addEventListener('canplaythrough', resolve, { once: true });
+            element.addEventListener('error', reject, { once: true });
+        });
+    }
+    
+    loadIframe(element, src) {
+        return new Promise((resolve) => {
+            element.src = src;
+            element.addEventListener('load', resolve, { once: true });
+        });
+    }
+    
+    loadGeneric(element, src) {
+        return fetch(src)
+            .then(response => response.text())
+            .then(content => {
+                element.innerHTML = content;
+            });
+    }
+    
+    prefetchNearbyImages() {
+        // Prefetch images that are likely to be needed soon
+        const nearbyImages = document.querySelectorAll('[data-lazy-prefetch]');
+        
+        nearbyImages.forEach(element => {
+            const src = element.dataset.lazyPrefetch;
+            if (!this.imageCache.has(src)) {
+                this.prefetchQueue.push(src);
+            }
+        });
+        
+        // Process prefetch queue gradually
+        this.processPrefetchQueue();
+    }
+    
+    processPrefetchQueue() {
+        if (this.prefetchQueue.length === 0) return;
+        
+        const src = this.prefetchQueue.shift();
+        const img = new Image();
+        
+        img.onload = () => {
+            this.imageCache.set(src, img);
+            // Process next item after a small delay to avoid blocking
+            setTimeout(() => this.processPrefetchQueue(), 100);
+        };
+        
+        img.onerror = () => {
+            // Still process next item even on error
+            setTimeout(() => this.processPrefetchQueue(), 100);
+        };
+        
+        img.src = src;
+    }
+    
+    // Public method to manually trigger loading
+    loadNow(element) {
+        if (element.hasAttribute('data-lazy')) {
+            this.loadElement(element);
+            this.observer.unobserve(element);
+        }
+    }
+    
+    // Preload critical images
+    preloadCritical(urls) {
+        urls.forEach(url => {
+            const link = document.createElement('link');
+            link.rel = 'preload';
+            link.as = 'image';
+            link.href = url;
+            document.head.appendChild(link);
+        });
+    }
+}
+
+// Initialize
+const lazyLoader = new IntelligentLazyLoading();
+
+// Usage examples:
+// <img data-lazy="/path/to/image.jpg" data-lazy-type="image" alt="Description">
+// <video data-lazy="/path/to/video.mp4" data-lazy-type="video" controls></video>
+// <iframe data-lazy="/path/to/content.html" data-lazy-type="iframe"></iframe>
+</script>
+```
+
+### 🎯 Progressive Enhancement
+
+```javascript
+class ProgressiveEnhancement {
+    constructor() {
+        this.features = {
+            css: this.detectCSSFeatures(),
+            js: this.detectJSFeatures(),
+            device: this.detectDevice(),
+            performance: this.detectPerformance()
+        };
+        
+        this.applyEnhancements();
+    }
+    
+    detectCSSFeatures() {
+        const testElement = document.createElement('div');
+        return {
+            grid: CSS.supports('display', 'grid'),
+            flexbox: CSS.supports('display', 'flex'),
+            customProperties: CSS.supports('--test', '0'),
+            backdrop: CSS.supports('backdrop-filter', 'blur(1px)'),
+            clipPath: CSS.supports('clip-path', 'circle(50%)'),
+            transforms3d: this.test3DTransforms()
+        };
+    }
+    
+    detectJSFeatures() {
+        return {
+            intersectionObserver: 'IntersectionObserver' in window,
+            webGL: this.testWebGL(),
+            serviceWorker: 'serviceWorker' in navigator,
+            webAssembly: 'WebAssembly' in window,
+            modules: 'noModule' in document.createElement('script')
+        };
+    }
+    
+    detectDevice() {
+        return {
+            mobile: window.innerWidth < 768,
+            tablet: window.innerWidth >= 768 && window.innerWidth < 1024,
+            desktop: window.innerWidth >= 1024,
+            touchDevice: 'ontouchstart' in window,
+            highDPI: window.devicePixelRatio > 1,
+            reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)')?.matches
+        };
+    }
+    
+    detectPerformance() {
+        const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        const memory = navigator.deviceMemory || 4; // Default to 4GB if not available
+        
+        return {
+            slowConnection: connection ? connection.effectiveType === 'slow-2g' || connection.effectiveType === '2g' : false,
+            saveData: connection ? connection.saveData : false,
+            lowMemory: memory < 4,
+            cores: navigator.hardwareConcurrency || 4
+        };
+    }
+    
+    test3DTransforms() {
+        const testElement = document.createElement('div');
+        testElement.style.transform = 'translateZ(0)';
+        return testElement.style.transform !== '';
+    }
+    
+    testWebGL() {
+        try {
+            const canvas = document.createElement('canvas');
+            return !!(canvas.getContext('webgl') || canvas.getContext('experimental-webgl'));
+        } catch (e) {
+            return false;
+        }
+    }
+    
+    applyEnhancements() {
+        // Add feature classes to body
+        const featureClasses = [];
+        
+        Object.entries(this.features).forEach(([category, features]) => {
+            Object.entries(features).forEach(([feature, supported]) => {
+                featureClasses.push(supported ? `has-${feature}` : `no-${feature}`);
+            });
+        });
+        
+        document.body.classList.add(...featureClasses);
+        
+        // Apply specific enhancements
+        this.enhanceAnimations();
+        this.enhanceImages();
+        this.enhanceInteractions();
+        this.enhancePerformance();
+    }
+    
+    enhanceAnimations() {
+        if (this.features.device.reducedMotion) {
+            // Disable or reduce animations
+            document.body.classList.add('reduced-motion');
+            
+            // Override GSAP defaults
+            if (window.gsap) {
+                gsap.defaults({ duration: 0.1 });
+            }
+        } else if (this.features.css.transforms3d) {
+            // Enable 3D transforms
+            document.body.classList.add('enhanced-animations');
+        }
+    }
+    
+    enhanceImages() {
+        if (this.features.performance.saveData || this.features.performance.slowConnection) {
+            // Use lower quality images
+            document.querySelectorAll('img[data-src-hq]').forEach(img => {
+                img.src = img.dataset.srcLq || img.dataset.src;
+            });
+        } else if (this.features.device.highDPI) {
+            // Use high-DPI images
+            document.querySelectorAll('img[data-src-2x]').forEach(img => {
+                img.src = img.dataset.src2x;
+            });
+        }
+    }
+    
+    enhanceInteractions() {
+        if (!this.features.device.touchDevice) {
+            // Add hover effects for non-touch devices
+            document.body.classList.add('has-hover');
+        }
+        
+        if (this.features.js.intersectionObserver) {
+            // Use Intersection Observer for scroll animations
+            this.enableScrollAnimations();
+        } else {
+            // Fallback to scroll events
+            this.fallbackScrollAnimations();
+        }
+    }
+    
+    enhancePerformance() {
+        if (this.features.performance.lowMemory || this.features.performance.slowConnection) {
+            // Reduce memory usage
+            this.optimizeForLowEnd();
+        }
+        
+        if (this.features.js.serviceWorker) {
+            // Register service worker
+            this.registerServiceWorker();
+        }
+    }
+    
+    enableScrollAnimations() {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('in-view');
+                }
+            });
+        });
+        
+        document.querySelectorAll('.animate-on-scroll').forEach(el => {
+            observer.observe(el);
+        });
+    }
+    
+    fallbackScrollAnimations() {
+        let throttleTimer = null;
+        
+        const checkVisibility = () => {
+            document.querySelectorAll('.animate-on-scroll:not(.in-view)').forEach(el => {
+                const rect = el.getBoundingClientRect();
+                if (rect.top < window.innerHeight && rect.bottom > 0) {
+                    el.classList.add('in-view');
+                }
+            });
+        };
+        
+        window.addEventListener('scroll', () => {
+            if (throttleTimer) return;
+            throttleTimer = setTimeout(() => {
+                checkVisibility();
+                throttleTimer = null;
+            }, 100);
+        });
+        
+        checkVisibility(); // Initial check
+    }
+    
+    optimizeForLowEnd() {
+        // Disable expensive animations
+        document.body.classList.add('low-performance');
+        
+        // Reduce particle counts
+        if (window.particleSystem) {
+            window.particleSystem.setParticleCount(50); // Reduce from default
+        }
+        
+        // Disable WebGL effects
+        document.querySelectorAll('.webgl-effect').forEach(el => {
+            el.style.display = 'none';
+        });
+    }
+    
+    registerServiceWorker() {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(registration => {
+                    console.log('Service Worker registered');
+                })
+                .catch(error => {
+                    console.log('Service Worker registration failed');
+                });
+        }
+    }
+    
+    // Public API
+    getFeatureSupport(feature) {
+        const [category, featureName] = feature.split('.');
+        return this.features[category]?.[featureName] || false;
+    }
+    
+    isLowEnd() {
+        return this.features.performance.lowMemory || 
+               this.features.performance.slowConnection ||
+               this.features.performance.cores < 4;
+    }
+}
+
+// Initialize
+const enhancement = new ProgressiveEnhancement();
+</script>
+```
 ```
